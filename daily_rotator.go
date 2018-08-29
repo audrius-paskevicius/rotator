@@ -2,12 +2,14 @@ package rotator
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
-	dateFormat string = "2006-01-02"
+	dateFormat string = "20060102"
 )
 
 // DailyRotator is writer which rotates file by date
@@ -22,41 +24,39 @@ type DailyRotator struct {
 // Write binaries to the file.
 // It will rotate files if date is chnaged from last writing.
 func (r *DailyRotator) Write(bytes []byte) (n int, err error) {
-
 	now := time.Now()
-
 	// Override when time is provided
 	if r.Now.Unix() > 0 {
 		now = r.Now
 	}
-
 	nextDate := now.Format(dateFormat)
-
 	// Using mutex instead of goroutine to avoid asynchronous writing
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-
 	if r.file == nil {
-
 		// Check file existence
 		stat, _ := os.Lstat(r.path)
 		if stat != nil {
 			// If file exists and modificated last date, just rotate it
 			modDate := stat.ModTime().Format(dateFormat)
 			if modDate != nextDate {
-				os.Rename(r.path, r.path+"."+modDate)
+				fext := filepath.Ext(r.path)
+				renamedPath := ""
+				if len(fext) != 0 {
+					renamedPath = strings.TrimRight(r.path, fext) + "_" + modDate + fext
+				} else {
+					renamedPath = r.path + "_" + modDate + fext
+				}
+				os.Rename(r.path, renamedPath)
 			}
 		}
-
 		file, err := os.OpenFile(r.path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 		if err != nil {
 			return 0, err
 		}
 		r.file = file
 		r.currentDate = nextDate
-
 	} else {
-
 		// Do rotate
 		if r.currentDate != nextDate {
 			// Close current file
@@ -66,20 +66,24 @@ func (r *DailyRotator) Write(bytes []byte) (n int, err error) {
 					return 0, err
 				}
 			}
-			// Resolve rotated file name
-			renamedName := r.path + "." + r.currentDate
+			fext := filepath.Ext(r.path)
+			renamedPath := ""
+			if len(fext) != 0 {
+				renamedPath = strings.TrimRight(r.path, fext) + "_" + r.currentDate + fext
+			} else {
+				renamedPath = r.path + "_" + r.currentDate + fext
+			}
 			// Check rotated file existence
-			stat, _ := os.Lstat(renamedName)
+			stat, _ := os.Lstat(renamedPath)
 			if stat != nil {
 				// Remove if the file already exist
-				err := os.Remove(renamedName)
+				err := os.Remove(renamedPath)
 				if err != nil {
 					return 0, err
 				}
 			}
 			// Rename current log file to be archived
-			os.Rename(r.path, renamedName)
-
+			os.Rename(r.path, renamedPath)
 			file, err := os.OpenFile(r.path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
 			if err != nil {
 				return 0, err
@@ -89,12 +93,10 @@ func (r *DailyRotator) Write(bytes []byte) (n int, err error) {
 			r.currentDate = nextDate
 		}
 	}
-
 	// Reset now
 	if r.Now.Unix() > 0 {
 		r.Now = time.Time{}
 	}
-
 	return r.file.Write(bytes)
 }
 

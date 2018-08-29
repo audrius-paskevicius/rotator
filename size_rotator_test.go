@@ -1,9 +1,10 @@
 package rotator
 
 import (
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/audrius-paskevicius/testify/assert"
 )
 
 const (
